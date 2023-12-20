@@ -3,6 +3,10 @@
 # This script is used to create zfs snapshots and remove older snapshots. 
 # The number of snapshots to retain is defined in the variable retention.
 # Author: iceflatline <iceflatline@gmail.com>
+# CoAuthor (unofficial): wretchedghost
+#
+# The initializations paths have been changed from BSD to Linux as iceflatline
+# has theirs set to BSD as default
 #
 # OPTIONS:
 # -v: Be verbose
@@ -22,7 +26,7 @@ xargs=/usr/bin/xargs
 zfs=/usr/sbin/zfs
 
 # Add location in src_0 minus the first and last "/" (ex. tank0/data or mnt/zfs/backup)
-src_0=""
+src_0="tank0/dataset-name"
 today="$snap_prefix-`date +%Y%m%d%H%M`"
 snap_today="$src_0@$today"
 snap_old=`$zfs list -t snapshot -o name | $grep "$src_0@$snap_prefix*" | $sort -r | $sed 1,${retention}d | $xargs -n 1`
