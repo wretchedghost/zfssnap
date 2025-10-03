@@ -1,74 +1,112 @@
-#!/bin/sh
+#!/bin/bash
+### BEGIN INFO
+# PROVIDE: 
+# REQUIRE: 
+# KEYWORD: 
 # Description:	
-# This script is used to create zfs snapshots and remove older snapshots. 
+# Optimized script to create ZFS snapshots and remove older snapshots.
 # The number of snapshots to retain is defined in the variable retention.
 # Author: iceflatline <iceflatline@gmail.com>
-# CoAuthor (unofficial): wretchedghost
-#
-# The initializations paths have been changed from BSD to Linux as iceflatline
-# has theirs set to BSD as default
+# Modified for optimization on Linux
 #
 # OPTIONS:
 # -v: Be verbose
 ### END INFO
- 
-### START OF SCRIPT 
-# These variables are named first because they are nested in other variables. 
-snap_prefix=snap 
-retention=90 
- 
-# Full paths to these utilities are needed when running the script from cron.
-date=/bin/date
-grep=/usr/bin/grep
-sed=/usr/bin/sed
-sort=/usr/bin/sort
-xargs=/usr/bin/xargs
-zfs=/usr/sbin/zfs
 
-# Add location in src_0 minus the first and last "/" (ex. tank0/data or mnt/zfs/backup)
-src_0="tank0/dataset-name"
-today="$snap_prefix-`date +%Y%m%d%H%M`"
-snap_today="$src_0@$today"
-snap_old=`$zfs list -t snapshot -o name | $grep "$src_0@$snap_prefix*" | $sort -r | $sed 1,${retention}d | $xargs -n 1`
-# Absolute directory where logs will be stored
-log=""
- 
-# Create a blank line between the previous log entry and this one.
-echo >> $log
- 
-# Print the name of the script.
-echo "zfssnap.sh" >> $log
- 
-# Print the current date/time.
-$date >> $log
- 
-echo >> $log
- 
-# Look for today's snapshot and, if not found, create it.  
-if $zfs list -H -o name -t snapshot | $grep "$snap_today" > /dev/null
-then
-	echo "Today's snapshot '$snap_today' already exists." >> $log
-	# Uncomment if you want the script to exit when it does not create today's snapshot:
-	#exit 1 
+### START OF SCRIPT
+set -euo pipefail
+
+# Configuration variables
+snap_prefix="snap"
+retention=90
+src_0="pool_0/archive"
+log="/home/wretchedghost/cronlog"
+
+# Full paths to utilities
+date=/bin/date
+zfs=/sbin/zfs
+
+# Generate snapshot names
+today="${snap_prefix}-$($date +%Y%m%d%H%M)"
+snap_today="${src_0}@${today}"
+
+# Function to log messages
+log_msg() {
+    echo "$1" >> "$log"
+}
+
+# Function to log with timestamp
+log_timestamp() {
+    $date >> "$log"
+}
+
+# Create blank line and header
+echo >> "$log"
+log_msg "zfssnap.sh"
+log_timestamp
+echo >> "$log"
+
+# Check if today's snapshot already exists
+if $zfs list -H -o name -t snapshot "$snap_today" >/dev/null 2>&1; then
+    log_msg "Today's snapshot '$snap_today' already exists."
+    # Uncomment if you want the script to exit when it does not create today's snapshot:
+    #exit 1
 else
-	echo "Taking today's snapshot: $snap_today" >> $log
-	$zfs snapshot -r $snap_today >> $log 2>&1
+    log_msg "Taking today's snapshot: $snap_today"
+    if $zfs snapshot -r "$snap_today" >> "$log" 2>&1; then
+        log_msg "Successfully created snapshot: $snap_today"
+    else
+        log_msg "ERROR: Failed to create snapshot: $snap_today"
+        log_msg "**********"
+        exit 1
+    fi
 fi
- 
-echo >> $log
- 
-# Remove snapshot(s) older than the value assigned to $retention.
-echo "Attempting to destroy old snapshots..." >> $log
- 
-if [ -n "$snap_old" ]
-then
-	echo "Destroying the following old snapshots:" >> $log
-	echo "$snap_old" >> $log
-	$zfs list -t snapshot -o name | $grep "$src_0@$snap_prefix*" | $sort -r | $sed 1,${retention}d | $xargs -n 1 $zfs destroy -r >> $log 2>&1
+
+echo >> "$log"
+
+# Get all snapshots for the dataset, sorted by creation time (oldest first)
+# Using native ZFS sorting with -s creation
+all_snaps=$($zfs list -t snapshot -H -o name -s creation | \
+    grep "^${src_0}@${snap_prefix}" || true)
+
+if [ -z "$all_snaps" ]; then
+    log_msg "No snapshots found matching pattern: ${src_0}@${snap_prefix}*"
+    log_msg "**********"
+    exit 0
+fi
+
+# Count total snapshots
+snap_count=$(echo "$all_snaps" | wc -l)
+
+log_msg "Found $snap_count snapshot(s) matching pattern."
+
+# Determine if we need to delete old snapshots
+if [ "$snap_count" -gt "$retention" ]; then
+    # Calculate how many to delete
+    to_delete=$((snap_count - retention))
+    
+    log_msg "Retention set to $retention, removing $to_delete old snapshot(s)..."
+    
+    # Get snapshots to delete (oldest ones)
+    snap_old=$(echo "$all_snaps" | head -n "$to_delete")
+    
+    log_msg "Destroying the following old snapshots:"
+    log_msg "$snap_old"
+    
+    # Destroy old snapshots
+    # Using a while loop for better error handling per snapshot
+    echo "$snap_old" | while IFS= read -r snap; do
+        if $zfs destroy -r "$snap" >> "$log" 2>&1; then
+            log_msg "Successfully destroyed: $snap"
+        else
+            log_msg "WARNING: Failed to destroy: $snap"
+        fi
+    done
 else
-    echo "Could not find any snapshots to destroy."	>> $log
+    log_msg "Snapshot count ($snap_count) is within retention ($retention)."
+    log_msg "No snapshots need to be destroyed."
 fi
- 
-# Mark the end of the script with a delimiter.
-echo "**********" >> $log
+
+# Mark the end of the script with a delimiter
+log_msg "**********"
 # END OF SCRIPT
