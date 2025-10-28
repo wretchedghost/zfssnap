@@ -1,9 +1,6 @@
 #!/bin/bash
 ### BEGIN INFO
-# PROVIDE: 
-# REQUIRE: 
-# KEYWORD: 
-# Description:	
+# Version 1.1.0
 # Optimized script to create ZFS snapshots and remove older snapshots.
 # The number of snapshots to retain is defined in the variable retention.
 # Author: iceflatline <iceflatline@gmail.com>
@@ -17,10 +14,10 @@
 set -euo pipefail
 
 # Configuration variables
-snap_prefix="snap"
-retention=90
-src_0="pool_0/archive"
-log="/home/wretchedghost/cronlog"
+snap_prefix="snap"          # What you want to snapshot name to start with. 
+retention=90                # Amount of snapshots to keep before deleting.
+src_0="pool_0/archive"      # Location of your pool. Most likely you will need to change this.
+log="/home/$USER/cronlog"   # Location to store the log output
 
 # Full paths to utilities
 date=/bin/date
